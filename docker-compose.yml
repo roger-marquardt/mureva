@@ -1,0 +1,14 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: mureva
+      POSTGRES_PASSWORD: mureva
+      POSTGRES_DB: mureva
+    ports:
+      - "5432:5432"
+    volumes:
+      - mureva_pg:/var/lib/postgresql/data
+
+volumes:
+  mureva_pg:

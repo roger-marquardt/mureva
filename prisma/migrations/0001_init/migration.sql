@@ -1,0 +1,8 @@
+CREATE TABLE "Lead" (
+  "id" TEXT NOT NULL,
+  "payload" JSONB NOT NULL,
+  "status" TEXT NOT NULL DEFAULT 'confirmed',
+  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+  CONSTRAINT "Lead_pkey" PRIMARY KEY ("id")
+);
