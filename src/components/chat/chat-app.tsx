@@ -79,6 +79,12 @@ export function ChatApp() {
   }, [input]);
 
   useEffect(() => {
+    if (!busy && !closed) {
+      inputRef.current?.focus();
+    }
+  }, [busy, closed]);
+
+  useEffect(() => {
     function reportAbandon() {
       const conversationId = conversationIdRef.current;
       if (conversationId && !closedRef.current) {
@@ -141,7 +147,6 @@ export function ChatApp() {
       setError(caught instanceof Error ? caught.message : "Falha inesperada.");
     } finally {
       setBusy(false);
-      inputRef.current?.focus();
     }
   }
 
@@ -221,7 +226,7 @@ export function ChatApp() {
                 void send(input);
               }
             }}
-            disabled={busy || closed}
+            disabled={closed}
             maxLength={2000}
             autoFocus
             placeholder={closed ? "Conversa encerrada" : "Escreva aqui…"}
