@@ -15,6 +15,12 @@ export const leadDraftSchema = z.object({
   bedrooms: z.string().trim().min(1).optional(),
   suites: z.string().trim().min(1).optional(),
   areaM2: z.string().trim().min(1).optional(),
+  furnishing: z.string().trim().min(1).optional(),
+  plannedRooms: z.string().trim().min(1).optional(),
+  fullKitchen: z.string().trim().min(1).optional(),
+  condoFee: z.string().trim().min(1).optional(),
+  condoAmenities: z.string().trim().min(1).optional(),
+  floorPreference: z.string().trim().min(1).optional(),
   timeline: z.string().trim().min(1).optional(),
   financing: financingSchema.optional(),
   requirements: z.string().trim().min(1).optional(),
@@ -42,6 +48,12 @@ export const leadExtractionSchema = z.object({
   bedrooms: z.string().nullable(),
   suites: z.string().nullable(),
   areaM2: z.string().nullable(),
+  furnishing: z.string().nullable().describe("Mobiliado, semi-mobiliado, sem mobília ou indiferente"),
+  plannedRooms: z.string().nullable().describe("Se quer quartos com armários planejados"),
+  fullKitchen: z.string().nullable().describe("Se quer cozinha completa"),
+  condoFee: z.string().nullable().describe("Valor desejado do condomínio"),
+  condoAmenities: z.string().nullable().describe("Amenidades desejadas no condomínio"),
+  floorPreference: z.string().nullable().describe("Preferência de andar"),
   timeline: z.string().nullable(),
   financing: financingSchema.nullable(),
   requirements: z.string().nullable(),
@@ -72,7 +84,7 @@ export function leadPatchFromExtraction(extraction: LeadExtraction): LeadDraft {
 }
 export type ContactPreference = z.infer<typeof contactPreferenceSchema>;
 
-const PROFILE_KEYS = [
+const PROFILE_BEFORE = [
   "name",
   "description",
   "city",
@@ -83,13 +95,25 @@ const PROFILE_KEYS = [
   "bedrooms",
   "suites",
   "areaM2",
-  "timeline",
-  "financing",
-  "requirements",
 ] as const satisfies ReadonlyArray<keyof LeadDraft>;
 
+const PROPERTY_DETAIL_KEYS = [
+  "furnishing",
+  "plannedRooms",
+  "fullKitchen",
+  "condoFee",
+  "condoAmenities",
+  "floorPreference",
+] as const satisfies ReadonlyArray<keyof LeadDraft>;
+
+const PROFILE_AFTER = ["timeline", "financing", "requirements"] as const satisfies ReadonlyArray<
+  keyof LeadDraft
+>;
+
 export const LEAD_FIELD_KEYS = [
-  ...PROFILE_KEYS,
+  ...PROFILE_BEFORE,
+  ...PROPERTY_DETAIL_KEYS,
+  ...PROFILE_AFTER,
   "contactPreference",
   "contactValue",
   "extraNotes",
@@ -117,7 +141,37 @@ export function mergeLead(current: LeadDraft, patch: LeadDraft): LeadDraft {
 
 const CONTACT_KEYS = ["contactPreference", "phone", "whatsapp", "email"] as const;
 const ASK_ONLY_KEYS: ReadonlySet<string> = new Set(["name", "description", ...CONTACT_KEYS, "extraNotes"]);
-const UNKNOWN_VALUES: ReadonlySet<string> = new Set(["não definido", "indefinido", "nenhuma"]);
+const UNKNOWN_VALUES: ReadonlySet<string> = new Set([
+  "nao definido",
+  "indefinido",
+  "nenhuma",
+  "indiferente",
+  "sem preferencia",
+  "sim",
+  "nao",
+]);
+
+function normalizeText(value: string): string {
+  return value.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().trim();
+}
+
+/** Cobertura counts as an apartment: it belongs to a condominium and has a floor. */
+export function isApartment(propertyType: string | undefined): boolean {
+  return /\b(apartamento|apto|cobertura)\b/.test(normalizeText(propertyType ?? ""));
+}
+
+export function hasCondominium(propertyType: string | undefined): boolean {
+  const text = normalizeText(propertyType ?? "");
+  return isApartment(propertyType) || /\bcondominio\b/.test(text);
+}
+
+/** Planned bedrooms are only relevant once the person wants the property furnished. */
+export function asksPlannedRooms(lead: LeadDraft): boolean {
+  const furnishing = normalizeText(lead.furnishing ?? "");
+  const furnished = /\bsemi-?mobiliad/.test(furnishing) || /\bmobiliad/.test(furnishing);
+  const declined = /\b(sem|nao)\b/.test(furnishing);
+  return furnished && !declined;
+}
 
 function keysAnswering(field: LeadFieldKey | undefined): ReadonlySet<string> {
   if (field === "contactPreference" || field === "contactValue") {
@@ -127,7 +181,18 @@ function keysAnswering(field: LeadFieldKey | undefined): ReadonlySet<string> {
 }
 
 function isUnknownValue(value: unknown): boolean {
-  return typeof value === "string" && UNKNOWN_VALUES.has(value.trim().toLowerCase());
+  return typeof value === "string" && UNKNOWN_VALUES.has(normalizeText(value));
+}
+
+function propertyDetailFields(lead: LeadDraft): LeadFieldKey[] {
+  return [
+    ...(!lead.furnishing ? (["furnishing"] as const) : []),
+    ...(asksPlannedRooms(lead) && !lead.plannedRooms ? (["plannedRooms"] as const) : []),
+    ...(!lead.fullKitchen ? (["fullKitchen"] as const) : []),
+    ...(hasCondominium(lead.propertyType) && !lead.condoFee ? (["condoFee"] as const) : []),
+    ...(hasCondominium(lead.propertyType) && !lead.condoAmenities ? (["condoAmenities"] as const) : []),
+    ...(isApartment(lead.propertyType) && !lead.floorPreference ? (["floorPreference"] as const) : []),
+  ];
 }
 
 /**
@@ -158,7 +223,11 @@ export function contactValue(lead: LeadDraft): string {
 }
 
 export function missingLeadFields(lead: LeadDraft): LeadFieldKey[] {
-  const missingProfile = PROFILE_KEYS.filter((key) => !lead[key]);
+  const missingProfile = [
+    ...PROFILE_BEFORE.filter((key) => !lead[key]),
+    ...propertyDetailFields(lead),
+    ...PROFILE_AFTER.filter((key) => !lead[key]),
+  ];
   const missingContact: LeadFieldKey[] = [
     ...(lead.contactPreference ? [] : (["contactPreference"] as const)),
     ...(contactValue(lead) ? [] : (["contactValue"] as const)),
@@ -212,6 +281,20 @@ export function formatLeadSummary(lead: LeadDraft): string {
     `Quartos: ${lead.bedrooms ?? "—"}`,
     `Suítes: ${lead.suites ?? "—"}`,
     `Metragem: ${lead.areaM2 ?? "—"}`,
+    `Mobília: ${lead.furnishing ?? "—"}`,
+    ...(asksPlannedRooms(lead) || lead.plannedRooms
+      ? [`Quartos planejados: ${lead.plannedRooms ?? "—"}`]
+      : []),
+    `Cozinha completa: ${lead.fullKitchen ?? "—"}`,
+    ...(hasCondominium(lead.propertyType) || lead.condoFee
+      ? [`Valor do condomínio: ${lead.condoFee ?? "—"}`]
+      : []),
+    ...(hasCondominium(lead.propertyType) || lead.condoAmenities
+      ? [`Amenidades do condomínio: ${lead.condoAmenities ?? "—"}`]
+      : []),
+    ...(isApartment(lead.propertyType) || lead.floorPreference
+      ? [`Andar: ${lead.floorPreference ?? "—"}`]
+      : []),
     `Prazo: ${lead.timeline ?? "—"}`,
     `Financiamento: ${lead.financing ? FINANCING_LABELS[lead.financing] : "—"}`,
     `Requisitos: ${lead.requirements ?? "—"}`,
@@ -225,6 +308,12 @@ const CHIPS_BY_FIELD: Partial<Record<LeadFieldKey, string[]>> = {
   purpose: ["Morar", "Investir"],
   bedrooms: ["1", "2", "3", "4+"],
   suites: ["Nenhuma", "1", "2", "3+"],
+  furnishing: ["Mobiliado", "Semi-mobiliado", "Sem mobília", "Indiferente"],
+  plannedRooms: ["Sim", "Não", "Indiferente"],
+  fullKitchen: ["Sim", "Não", "Indiferente"],
+  condoFee: ["Sem preferência"],
+  condoAmenities: ["Sem preferência"],
+  floorPreference: ["Térreo", "Andar baixo", "Andar alto", "Sem preferência"],
   timeline: ["Imediato", "Até 3 meses", "Até 6 meses", "1 ano ou mais"],
   financing: ["À vista", "Financiamento bancário", "FGTS"],
   contactPreference: ["Telefone", "WhatsApp", "E-mail"],

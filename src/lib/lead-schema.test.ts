@@ -1,6 +1,7 @@
 import {
   acceptedExtraction,
   chipsForField,
+  formatLeadSummary,
   isLeadComplete,
   LEAD_FIELD_KEYS,
   leadPatchFromExtraction,
@@ -23,6 +24,10 @@ const PROFILE: LeadDraft = {
   bedrooms: "3",
   suites: "1",
   areaM2: "200 m²",
+  furnishing: "Sem mobília",
+  fullKitchen: "Não",
+  condoFee: "Até R$ 800",
+  condoAmenities: "Piscina",
   timeline: "Até 6 meses",
   financing: "banco",
   requirements: "Jardim e vaga para 2 carros",
@@ -36,10 +41,15 @@ const COMPLETE_LEAD: LeadDraft = {
 };
 
 describe("missingLeadFields", () => {
-  it("starts with the name and lists every field when empty", () => {
+  it("starts with the name and skips conditional questions before the property is known", () => {
     const missing = missingLeadFields({});
     expect(missing[0]).toBe("name");
-    expect(missing).toHaveLength(LEAD_FIELD_KEYS.length);
+    expect(missing).toContain("furnishing");
+    expect(missing).toContain("fullKitchen");
+    expect(missing).not.toContain("plannedRooms");
+    expect(missing).not.toContain("condoFee");
+    expect(missing).not.toContain("floorPreference");
+    expect(missing).toHaveLength(LEAD_FIELD_KEYS.length - 4);
   });
 
   it("asks for the free description right after the name", () => {
@@ -54,7 +64,10 @@ describe("missingLeadFields", () => {
       areaM2: undefined,
       timeline: undefined,
     };
-    expect(missingLeadFields(rest).slice(0, 4)).toEqual(["bedrooms", "suites", "areaM2", "timeline"]);
+    const missing = missingLeadFields(rest);
+    expect(missing.indexOf("bedrooms")).toBeLessThan(missing.indexOf("suites"));
+    expect(missing.indexOf("suites")).toBeLessThan(missing.indexOf("areaM2"));
+    expect(missing.indexOf("areaM2")).toBeLessThan(missing.indexOf("timeline"));
   });
 
   it("asks contact only after the profile, then the chosen channel, then extra notes", () => {
@@ -63,6 +76,35 @@ describe("missingLeadFields", () => {
     expect(
       nextMissingField({ ...PROFILE, contactPreference: "email", email: "maria@email.com" }),
     ).toBe("extraNotes");
+  });
+
+  it("asks for planned rooms only when the property will be furnished", () => {
+    const base: LeadDraft = { ...PROFILE, furnishing: undefined, fullKitchen: undefined };
+    expect(missingLeadFields({ ...base, furnishing: "Mobiliado" }).slice(0, 2)).toEqual([
+      "plannedRooms",
+      "fullKitchen",
+    ]);
+    expect(missingLeadFields({ ...base, furnishing: "Semi-mobiliado" })[0]).toBe("plannedRooms");
+    expect(missingLeadFields({ ...base, furnishing: "Sem mobília" })).not.toContain("plannedRooms");
+    expect(missingLeadFields({ ...base, furnishing: "Indiferente" })).not.toContain("plannedRooms");
+  });
+
+  it("asks condo fee and amenities for a condominium, and floor only for an apartment", () => {
+    const ready: LeadDraft = {
+      ...PROFILE,
+      propertyType: "Casa",
+      condoFee: undefined,
+      condoAmenities: undefined,
+    };
+    expect(missingLeadFields(ready)).not.toContain("condoFee");
+    expect(missingLeadFields(ready)).not.toContain("floorPreference");
+
+    const condo = missingLeadFields({ ...ready, propertyType: "Casa em condomínio" });
+    expect(condo.slice(0, 2)).toEqual(["condoFee", "condoAmenities"]);
+    expect(condo).not.toContain("floorPreference");
+
+    const apartment = missingLeadFields({ ...ready, propertyType: "Apartamento" });
+    expect(apartment.slice(0, 3)).toEqual(["condoFee", "condoAmenities", "floorPreference"]);
   });
 
   it("does not accept a value from a different channel than the chosen one", () => {
@@ -100,6 +142,12 @@ describe("leadPatchFromExtraction", () => {
     bedrooms: null,
     suites: null,
     areaM2: null,
+    furnishing: null,
+    plannedRooms: null,
+    fullKitchen: null,
+    condoFee: null,
+    condoAmenities: null,
+    floorPreference: null,
     timeline: null,
     financing: null,
     requirements: null,
@@ -169,6 +217,15 @@ describe("acceptedExtraction", () => {
     expect(acceptedExtraction(patch, "budgetRange")).toEqual({ propertyType: "Casa em condomínio" });
   });
 
+  it("drops an indifferent answer that was not asked and keeps a volunteered furnishing", () => {
+    expect(acceptedExtraction({ furnishing: "Indiferente", city: "Curitiba" }, "city")).toEqual({
+      city: "Curitiba",
+    });
+    expect(
+      acceptedExtraction({ description: "Apartamento mobiliado", furnishing: "Mobiliado" }, "description"),
+    ).toEqual({ description: "Apartamento mobiliado", furnishing: "Mobiliado" });
+  });
+
   it("accepts extra notes only when they are being asked", () => {
     expect(acceptedExtraction({ extraNotes: "Nenhuma" }, "requirements")).toEqual({});
     expect(acceptedExtraction({ extraNotes: "Nenhuma" }, "extraNotes")).toEqual({ extraNotes: "Nenhuma" });
@@ -189,9 +246,39 @@ describe("parseLead", () => {
 });
 
 describe("chipsForField", () => {
-  it("offers suites and closing chips", () => {
-    expect(chipsForField("suites")).toContain("Nenhuma");
+  it("offers furnishing, condo and closing chips", () => {
+    expect(chipsForField("furnishing")).toEqual([
+      "Mobiliado",
+      "Semi-mobiliado",
+      "Sem mobília",
+      "Indiferente",
+    ]);
+    expect(chipsForField("condoAmenities")).toEqual(["Sem preferência"]);
+    expect(chipsForField("floorPreference")).toContain("Andar alto");
     expect(chipsForField("extraNotes")).toEqual(["Não, é só isso"]);
     expect(chipsForField(undefined)).toEqual([]);
+  });
+});
+
+describe("formatLeadSummary", () => {
+  it("hides condominium and floor lines for a house and shows them for an apartment", () => {
+    const house: LeadDraft = {
+      ...PROFILE,
+      propertyType: "Casa",
+      condoFee: undefined,
+      condoAmenities: undefined,
+    };
+    const houseSummary = formatLeadSummary(house);
+    expect(houseSummary).not.toContain("Valor do condomínio");
+    expect(houseSummary).not.toContain("Andar");
+    expect(houseSummary).toContain("Mobília: Sem mobília");
+
+    const apartment = formatLeadSummary({
+      ...PROFILE,
+      propertyType: "Apartamento",
+      floorPreference: "Andar alto",
+    });
+    expect(apartment).toContain("Valor do condomínio: Até R$ 800");
+    expect(apartment).toContain("Andar: Andar alto");
   });
 });

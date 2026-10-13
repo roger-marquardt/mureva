@@ -21,11 +21,46 @@ describe("nextStepInstruction", () => {
     expect(nextStepInstruction(PROFILE_UNTIL_BEDROOMS)).toMatch(/suítes/);
   });
 
+  it("asks about planned rooms only after a furnished choice", () => {
+    const ready: LeadDraft = { ...PROFILE_UNTIL_BEDROOMS, suites: "1", areaM2: "200" };
+    expect(nextStepInstruction(ready)).toMatch(/mobiliado/);
+    expect(nextStepInstruction({ ...ready, furnishing: "Mobiliado" })).toMatch(/armários planejados/);
+    expect(nextStepInstruction({ ...ready, furnishing: "Semi-mobiliado" })).toMatch(/armários planejados/);
+    expect(nextStepInstruction({ ...ready, furnishing: "Sem mobília" })).toMatch(/cozinha completa/);
+  });
+
+  it("asks condo details for a condominium and floor only for an apartment", () => {
+    const ready: LeadDraft = {
+      ...PROFILE_UNTIL_BEDROOMS,
+      suites: "1",
+      areaM2: "200",
+      furnishing: "Sem mobília",
+      fullKitchen: "Não",
+    };
+    expect(nextStepInstruction({ ...ready, propertyType: "Casa em condomínio" })).toMatch(/valor de condomínio/);
+    expect(
+      nextStepInstruction({ ...ready, propertyType: "Casa em condomínio", condoFee: "R$ 500" }),
+    ).toMatch(/amenidades/);
+    expect(
+      nextStepInstruction({
+        ...ready,
+        propertyType: "Apartamento",
+        condoFee: "R$ 500",
+        condoAmenities: "Piscina",
+      }),
+    ).toMatch(/andar/);
+    expect(nextStepInstruction({ ...ready, propertyType: "Casa" })).toMatch(/em quanto tempo/);
+  });
+
   it("asks only for the chosen contact channel", () => {
     const lead: LeadDraft = {
       ...PROFILE_UNTIL_BEDROOMS,
       suites: "1",
       areaM2: "200",
+      furnishing: "Sem mobília",
+      fullKitchen: "Não",
+      condoFee: "R$ 500",
+      condoAmenities: "Piscina",
       timeline: "6 meses",
       financing: "banco",
       requirements: "jardim",
@@ -47,6 +82,10 @@ describe("replyInstructions", () => {
       ...PROFILE_UNTIL_BEDROOMS,
       suites: "1",
       areaM2: "200",
+      furnishing: "Sem mobília",
+      fullKitchen: "Não",
+      condoFee: "R$ 500",
+      condoAmenities: "Piscina",
       timeline: "6 meses",
       financing: "banco",
       requirements: "jardim",

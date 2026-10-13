@@ -22,6 +22,14 @@ const NEXT_STEP: Record<Exclude<LeadFieldKey, "contactValue">, string> = {
   bedrooms: "Pergunte quantos quartos ela deseja.",
   suites: "Pergunte quantos desses quartos ela gostaria que fossem suítes.",
   areaM2: "Pergunte se ela tem ideia da metragem desejada, em metros quadrados.",
+  furnishing:
+    "Pergunte se ela busca o imóvel mobiliado, semi-mobiliado ou sem mobília. Ela pode dizer que não tem preferência.",
+  plannedRooms: "Pergunte se ela quer os quartos com armários planejados.",
+  fullKitchen: "Pergunte se ela quer a cozinha completa.",
+  condoFee: "Pergunte qual valor de condomínio ela deseja pagar.",
+  condoAmenities:
+    "Pergunte quais amenidades ela gostaria que o condomínio tivesse, como salão de festas, academia ou piscina. Ela pode dizer que não tem preferência.",
+  floorPreference: "Pergunte se ela tem alguma preferência de andar.",
   timeline: "Pergunte em quanto tempo ela pretende comprar.",
   financing: "Pergunte como pretende pagar: à vista, financiamento bancário ou usando FGTS.",
   requirements:
@@ -69,7 +77,8 @@ Regras:
 - Preencha somente os campos que a pessoa mencionou. Todos os outros devem ser null; nunca use valores de exemplo, traços ou textos de preenchimento.
 - Registre somente o que a pessoa disse explicitamente. Nunca deduza nem invente (por exemplo, não marque "morar" nem "à vista" se ela não disse).
 - Uma descrição livre do imóvel vai em description; extraia dela também os campos específicos que ela mencionar.
-- Se a pessoa disser que não sabe, que tanto faz ou que não tem preferência, registre "Não definido" (ou "indefinido" em purpose e financing) apenas no campo perguntado.
+- Se a pessoa disser que não sabe, que tanto faz ou que não tem preferência, registre "Não definido" (ou "indefinido" em purpose e financing; "Indiferente" em furnishing, plannedRooms e fullKitchen) apenas no campo perguntado.
+- Em furnishing use mobiliado, semi-mobiliado, sem mobília ou indiferente. Em plannedRooms e fullKitchen registre sim, não ou indiferente.
 - Em contactPreference use phone, whatsapp ou email. Guarde o número ou endereço no campo do canal correspondente.
 - Em extraNotes guarde o que a pessoa quis acrescentar no final; se ela disser que não tem mais nada, registre "Nenhuma".
 - Se a mensagem não trouxer nenhum dado novo, chame update_lead com todos os campos null.
