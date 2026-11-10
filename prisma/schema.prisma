@@ -86,3 +86,74 @@ model LlmCall {
 
   @@index([conversationId, createdAt])
 }
+
+/// ISO 3166-1 country. Reference data: a country is not "in play" by itself, only its covered cities are.
+model Country {
+  /// ISO 3166-1 alpha-2 code, e.g. "BR".
+  id        String         @id
+  name      String
+  /// true: every city of this country has a state. false: the country has no State rows and its
+  /// cities have none. Can only change while the country has no states and no cities.
+  hasStates Boolean
+  createdAt DateTime       @default(now())
+  states    State[]
+  cities    CoverageCity[]
+}
+
+/// First-level subdivision of a country that has states (UF in Brazil).
+model State {
+  /// "<countryId>_<code>", e.g. "BR_AC". The database rejects any other shape.
+  id        String         @id
+  countryId String
+  /// Code within the country, e.g. "AC".
+  code      String
+  name      String
+  createdAt DateTime       @default(now())
+  country   Country        @relation(fields: [countryId], references: [id], onDelete: Restrict)
+  cities    CoverageCity[]
+
+  /// Target of CoverageCity's (countryId, stateId) foreign key: a city's state is in its own country.
+  @@unique([countryId, id])
+}
+
+/// Coverage list. A city is in play only while it has a row here.
+model CoverageCity {
+  id        String             @id @default(cuid())
+  countryId String
+  /// Required when the country has states, absent when it does not.
+  stateId   String?
+  /// Display name, e.g. "São José dos Pinhais".
+  name      String
+  /// citySlug(name), e.g. "sao-jose-dos-pinhais". Unique within the state, or within the country
+  /// when it has no states.
+  slug      String
+  createdAt DateTime           @default(now())
+  country   Country            @relation(fields: [countryId], references: [id], onDelete: Restrict)
+  state     State?             @relation(fields: [countryId, stateId], references: [countryId, id], onDelete: Restrict)
+  sites     CoverageSiteCity[]
+
+  /// NULLS NOT DISTINCT in the migration, so stateless countries cannot repeat a slug either.
+  @@unique([countryId, stateId, slug])
+}
+
+/// A website the system may read. It is in play only for the cities listed in CoverageSiteCity;
+/// a site with no CoverageSiteCity rows is not crawled at all.
+model CoverageSite {
+  id        String             @id @default(cuid())
+  /// Exact lowercase hostname, no scheme, port or path, e.g. "www.example.com.br".
+  host      String             @unique
+  createdAt DateTime           @default(now())
+  cities    CoverageSiteCity[]
+}
+
+/// Per-site city allowlist: the site may be read for this city, and for no city without a row.
+model CoverageSiteCity {
+  siteId    String
+  cityId    String
+  createdAt DateTime     @default(now())
+  site      CoverageSite @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  city      CoverageCity @relation(fields: [cityId], references: [id], onDelete: Cascade)
+
+  @@id([siteId, cityId])
+  @@index([cityId])
+}
